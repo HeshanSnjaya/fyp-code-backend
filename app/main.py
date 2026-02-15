@@ -7,7 +7,7 @@ from .schemas import (
     AnalyzeRequest, AnalyzeResponse, EvaluateAnswersRequest, FinalResult,
     DetectedPattern, AnswerScore
 )
-from .github_fetch import clone_repository, collect_python_files, read_source_files
+from .github_fetch import clone_repository, collect_python_files, read_source_files, cleanup_old_repositories
 from .ast_analyzer import analyze_ast_patterns
 from .ml_classifier import classifier
 from .quality_scorer import calculate_code_metrics, calculate_quality_score
@@ -42,18 +42,38 @@ async def root():
     return {
         "message": "Code Evaluation Platform API",
         "status": "running",
-        "endpoints": ["/analyze", "/evaluate"]
+        "endpoints": ["/analyze", "/evaluate", "/cleanup"]
     }
+
+@app.post("/cleanup")
+async def cleanup_cache():
+    """
+    Manually cleanup cached repositories.
+    Removes old repositories from _repos folder.
+    """
+    try:
+        print("\n🧹 Manual cleanup requested...")
+        cleanup_old_repositories(max_age_hours=0)  # Remove all
+        return {
+            "status": "success",
+            "message": "Repository cache cleaned successfully"
+        }
+    except Exception as e:
+        print(f"❌ Cleanup error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Cleanup failed: {str(e)}")
 
 @app.post("/analyze", response_model=AnalyzeResponse)
 async def analyze_repository(request: AnalyzeRequest):
     """
     STEP 1-8: Analyze GitHub repository and generate questions
+    Always clones fresh repository to get latest changes.
     """
     try:
-        print(f"\n📥 Analyzing repository: {request.repo_url}")
+        print(f"\n{'='*60}")
+        print(f"📥 Starting analysis: {request.repo_url}")
+        print(f"{'='*60}")
         
-        # STEP 2: Clone repository and extract Python files
+        # STEP 2: Clone repository and extract Python files (always fresh)
         local_path = clone_repository(request.repo_url)
         py_files = collect_python_files(local_path)
         
@@ -193,23 +213,29 @@ async def evaluate_answers(request: EvaluateAnswersRequest):
         raise HTTPException(status_code=500, detail=f"Evaluation failed: {str(e)}")
 
 def _create_pattern_list(ast_features: Dict, algo_label: str) -> List[DetectedPattern]:
-    """Create pattern detection list from AST features"""
+    """Create pattern detection list from AST features with improved categorization"""
     
     patterns = []
     
+    # Algorithm categorization mappings
+    sorting_algos = ["Sorting", "merge_sort", "quick_sort", "bubble_sort", "heap_sort", "insertion_sort"]
+    searching_algos = ["Searching", "binary_search", "linear_search"]
+    
     # Algorithm patterns (5)
+    is_sorting = any(algo in algo_label for algo in sorting_algos)
     patterns.append(DetectedPattern(
         name="Sorting",
-        present=algo_label == "Sorting",
-        confidence=0.85 if algo_label == "Sorting" else 0.0,
-        evidence={"source": "ML Classifier"} if algo_label == "Sorting" else None
+        present=is_sorting,
+        confidence=0.85 if is_sorting else 0.0,
+        evidence={"source": "ML Classifier", "algorithm": algo_label} if is_sorting else None
     ))
     
+    is_searching = any(algo in algo_label for algo in searching_algos)
     patterns.append(DetectedPattern(
         name="Searching",
-        present=algo_label == "Searching",
-        confidence=0.85 if algo_label == "Searching" else 0.0,
-        evidence={"source": "ML Classifier"} if algo_label == "Searching" else None
+        present=is_searching,
+        confidence=0.85 if is_searching else 0.0,
+        evidence={"source": "ML Classifier", "algorithm": algo_label} if is_searching else None
     ))
     
     patterns.append(DetectedPattern(
@@ -219,18 +245,20 @@ def _create_pattern_list(ast_features: Dict, algo_label: str) -> List[DetectedPa
         evidence={"source": "AST Analysis"} if ast_features["has_recursion"] else None
     ))
     
+    is_dp = "Dynamic Programming" in algo_label or "dp" in algo_label.lower()
     patterns.append(DetectedPattern(
         name="Dynamic Programming",
-        present=algo_label == "Dynamic Programming",
-        confidence=0.85 if algo_label == "Dynamic Programming" else 0.0,
-        evidence={"source": "ML Classifier"} if algo_label == "Dynamic Programming" else None
+        present=is_dp,
+        confidence=0.85 if is_dp else 0.0,
+        evidence={"source": "ML Classifier"} if is_dp else None
     ))
     
+    is_greedy = "Greedy" in algo_label
     patterns.append(DetectedPattern(
         name="Greedy Algorithms",
-        present=algo_label == "Greedy Algorithms",
-        confidence=0.85 if algo_label == "Greedy Algorithms" else 0.0,
-        evidence={"source": "ML Classifier"} if algo_label == "Greedy Algorithms" else None
+        present=is_greedy,
+        confidence=0.85 if is_greedy else 0.0,
+        evidence={"source": "ML Classifier"} if is_greedy else None
     ))
     
     # Data structure patterns (3)

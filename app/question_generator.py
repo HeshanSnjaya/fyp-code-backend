@@ -67,6 +67,16 @@ QUESTION_TEMPLATES = {
             "question": "Explain the greedy choice property and why it works for this problem.",
             "difficulty": "hard",
             "keywords": ["greedy choice", "locally optimal", "globally optimal", "proof"]
+        },
+        {
+            "question": "How do you prove that your greedy algorithm produces an optimal solution?",
+            "difficulty": "hard",
+            "keywords": ["proof", "correctness", "optimal", "greedy stays ahead", "exchange argument"]
+        },
+        {
+            "question": "What is the time complexity of your greedy algorithm and why is it efficient?",
+            "difficulty": "medium",
+            "keywords": ["time complexity", "efficient", "sorting", "linear", "greedy approach"]
         }
     ],
     "Nested loops": [
@@ -120,6 +130,7 @@ def generate_questions(
     
     questions = []
     question_id = 1
+    used_questions = set()  # Track used question texts to avoid duplicates
     
     # Always include algorithm question if detected
     if algorithm.label in QUESTION_TEMPLATES:
@@ -133,6 +144,7 @@ def generate_questions(
             expected_keywords=selected["keywords"],
             max_marks=1.0
         ))
+        used_questions.add(selected["question"])
         question_id += 1
     
     # Add questions for detected patterns
@@ -142,17 +154,22 @@ def generate_questions(
                 break
             
             pattern_questions = QUESTION_TEMPLATES[pattern.name]
-            selected = random.choice(pattern_questions)
             
-            questions.append(InterviewQuestion(
-                id=f"q{question_id}",
-                pattern=pattern.name,
-                question=selected["question"],
-                difficulty=selected["difficulty"],
-                expected_keywords=selected["keywords"],
-                max_marks=1.0
-            ))
-            question_id += 1
+            # Try to find a unique question (not already used)
+            available_questions = [q for q in pattern_questions if q["question"] not in used_questions]
+            
+            if available_questions:
+                selected = random.choice(available_questions)
+                questions.append(InterviewQuestion(
+                    id=f"q{question_id}",
+                    pattern=pattern.name,
+                    question=selected["question"],
+                    difficulty=selected["difficulty"],
+                    expected_keywords=selected["keywords"],
+                    max_marks=1.0
+                ))
+                used_questions.add(selected["question"])
+                question_id += 1
     
     # Ensure minimum 3 questions
     if len(questions) < 3:
